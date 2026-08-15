@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>原子核模拟</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui}
+body{max-width:720px;margin:20px auto;padding:0 16px;background:#f7f9fc}
+h1{text-align:center;color:#222;font-size:22px}
+.box-wrap{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+.top-btn{
+  display:flex;
+  gap:10px;
+  margin-bottom:12px;
+  justify-content:center;
+}
+button{padding:8px 14px;border:none;border-radius:8px;background:#2563eb;color:white;font-size:15px;cursor:pointer}
+button.btn-clear{background:#dc2626;}
+button:active{opacity:0.85}
+#settingPanel{background:#eff6ff;padding:12px;border-radius:10px;margin-bottom:12px;display:none}
+.color-item{display:flex;align-items:center;gap:8px;margin:6px 0}
+#atomName{text-align:center;font-size:16px;font-weight:bold;margin:10px 0;color:#b91c1c;min-height:60px;line-height:1.6}
+#simCanvas{width:100%;height:360px;border:1px solid #cbd5e1;border-radius:8px;background:#fefefe}
+.ctrl-row{
+  display:flex;
+  gap:8px;
+  margin-top:12px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+</style>
+</head>
+<body>
+<h1>原子核模拟</h1>
+<div class="box-wrap">
+  <div class="top-btn">
+    <button id="btnStart">开始</button>
+    <button id="btnSet">设置</button>
+    <button id="btnClear" class="btn-clear" style="display:none">清空</button>
+  </div>
+
+  <div id="settingPanel">
+    <div class="color-item">
+      <span>质子颜色：</span>
+      <input type="color" id="colorProton" value="#22c55e">
+    </div>
+    <div class="color-item">
+      <span>中子颜色：</span>
+      <input type="color" id="colorNeutron" value="#3b82f6">
+    </div>
+    <div class="color-item">
+      <span>电子颜色：</span>
+      <input type="color" id="colorElectron" value="#ef4444">
+    </div>
+    <div style="font-size:13px;color:#555;margin-top:4px">选择色块即可修改粒子颜色</div>
+  </div>
+
+  <div id="atomName"></div>
+  <canvas id="simCanvas"></canvas>
+
+  <div class="ctrl-row" id="ctrlBar" style="display:none">
+    <button id="addNeutron">添加中子</button>
+    <button id="addProton">添加质子</button>
+    <button id="addElectron">添加电子</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width;
+  canvas.height = rect.height;
+  render();
+}
+window.addEventListener('resize',resizeCanvas);
+
+let colorProton = '#22c55e';
+let colorNeutron = '#3b82f6';
+let colorElectron = '#ef4444';
+
+let countProton = 0;
+let countNeutron = 0;
+let countElectron = 0;
+
+const btnStart = document.getElementById('btnStart');
+const btnSet = document.getElementById('btnSet');
+const btnClear = document.getElementById('btnClear');
+const settingPanel = document.getElementById('settingPanel');
+const ctrlBar = document.getElementById('ctrlBar');
+const atomNameDom = document.getElementById('atomName');
+
+const inpProton = document.getElementById('colorProton');
+const inpNeutron = document.getElementById('colorNeutron');
+const inpElectron = document.getElementById('colorElectron');
+
+inpProton.oninput = e=>{colorProton = e.target.value;render()};
+inpNeutron.oninput = e=>{colorNeutron = e.target.value;render()};
+inpElectron.oninput = e=>{colorElectron = e.target.value;render()};
+
+btnSet.onclick = ()=>{
+  settingPanel.style.display = settingPanel.style.display==='none'?'block':'none';
+};
+
+btnStart.onclick = ()=>{
+  ctrlBar.style.display = 'flex';
+  btnClear.style.display = 'block';
+  resizeCanvas();
+};
+
+btnClear.onclick = function(){
+  countProton = 0;
+  countNeutron = 0;
+  countElectron = 0;
+  render();
+};
+
+document.getElementById('addNeutron').onclick = ()=>{countNeutron++;render();};
+document.getElementById('addProton').onclick = ()=>{countProton++;render();};
+document.getElementById('addElectron').onclick = ()=>{countElectron++;render();};
+
+const elementTable = {
+  1:"氢 H",
+  2:"氦 He",
+  3:"锂 Li",
+  4:"铍 Be",
+  5:"硼 B",
+  6:"碳 C",
+  7:"氮 N",
+  8:"氧 O",
+  9:"氟 F",
+  10:"氖 Ne"
+};
+// 稳定同位素列表 [质子数量]:[允许的中子数]
+const stableIsotope = {
+  1:[0,1],
+  2:[1,2],
+  3:[3,4],
+  4:[5],
+  5:[5,6],
+  6:[6,7],
+  7:[7,8],
+  8:[8,9,10],
+  9:[10],
+  10:[10,12]
+};
+
+function render(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const cx = canvas.width/2;
+  const cy = canvas.height/2;
+
+  if(countProton > 0){
+    let elem = elementTable[countProton] ?? `未知(Z=${countProton})`;
+    let chargeNote = "";
+    if(countProton === countElectron){
+      chargeNote = "【中性原子】";
+    }else if(countElectron < countProton){
+      chargeNote = "【阳离子，带正电】";
+    }else{
+      chargeNote = "【阴离子，带负电】";
+    }
+
+    let stableNote = "";
+    const sn = stableIsotope[countProton];
+    if(sn){
+      if(sn.includes(countNeutron)){
+        stableNote = "✅稳定同位素";
+      }else{
+        stableNote = "⚠️极不稳定同位素(现实几乎不存在)";
+      }
+    }else{
+      stableNote = "⚠️超出已知稳定范围";
+    }
+
+    atomNameDom.innerText = `${elem}\n质子:${countProton} 中子:${countNeutron} 电子:${countElectron}\n${chargeNote} ${stableNote}`;
+  }else{
+    atomNameDom.innerText = "";
+  }
+
+  const nucleusTotal = countProton + countNeutron;
+  const rCore = 22 + nucleusTotal*2.2;
+  let idx = 0;
+
+  for(let i=0;i<countProton;i++){
+    let ang = nucleusTotal===0 ? 0 : (idx / nucleusTotal) * Math.PI*2;
+    let px = cx + Math.cos(ang)*rCore*0.45;
+    let py = cy + Math.sin(ang)*rCore*0.45;
+    ctx.beginPath();
+    ctx.arc(px,py,10,0,Math.PI*2);
+    ctx.fillStyle = colorProton;
+    ctx.fill();
+    idx++;
+  }
+  for(let i=0;i<countNeutron;i++){
+    let ang = nucleusTotal===0 ? 0 : (idx / nucleusTotal) * Math.PI*2;
+    let px = cx + Math.cos(ang)*rCore*0.45;
+    let py = cy + Math.sin(ang)*rCore*0.45;
+    ctx.beginPath();
+    ctx.arc(px,py,10,0,Math.PI*2);
+    ctx.fillStyle = colorNeutron;
+    ctx.fill();
+    idx++;
+  }
+
+  for(let e=0;e<countElectron;e++){
+    const orbitR = 80 + (e%3)*45;
+    const ang = e * 1.1;
+    const ex = cx + Math.cos(ang)*orbitR;
+    const ey = cy + Math.sin(ang)*orbitR;
+    ctx.beginPath();
+    ctx.arc(cx,cy,orbitR,0,Math.PI*2);
+    ctx.strokeStyle="#cccccc";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ex,ey,7,0,Math.PI*2);
+    ctx.fillStyle = colorElectron;
+    ctx.fill();
+  }
+}
+
+resizeCanvas();
+</script>
+</body>
+</html>
